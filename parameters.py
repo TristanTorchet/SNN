@@ -42,7 +42,7 @@ def weight_generation(key: jnp.array, sim_params: SimArgs,
         w = jnp.abs(w)
     return key, w
 
-def weight_generation_1h(key: jnp.array, sim_params: SimArgs,
+def weight_generation_r1(key: jnp.array, sim_params: SimArgs,
                       visualize_plot: bool = True) -> (jnp.array, jnp.array):
     key, subkey = jax.random.split(key)
     win = jax.random.normal(subkey, shape=(sim_params.n_h,
