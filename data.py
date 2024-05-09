@@ -290,7 +290,7 @@ def get_data_loaders(sim_params):
                               shuffle=True, collate_fn=custom_collate_fn,
                               drop_last=True)
     val_loader = DataLoader(val_ds_split, sim_params.batch_size,
-                            shuffle=True, collate_fn=custom_collate_fn,
+                            shuffle=False, collate_fn=custom_collate_fn,
                             drop_last=True)
     test_loader = DataLoader(test_ds, sim_params.batch_size,
                              shuffle=None, collate_fn=custom_collate_fn,
