@@ -68,6 +68,7 @@ def weight_generation_r1(key: jnp.array, sim_params: SimArgs,
     else:
         return key, [win, wrec, wout]
 
+
 def tau_generation(key, tau_bar, layer_size, dt):
     key, subkey = jax.random.split(key)
     gamma_k = 3
@@ -75,3 +76,33 @@ def tau_generation(key, tau_bar, layer_size, dt):
     tau = jax.random.gamma(subkey, a=gamma_k, shape=(layer_size,)) * gamma_theta
     alpha = jnp.exp(-dt/tau)
     return key, alpha
+
+
+def init_MLSNN(key, layer_widths, sim_params):
+    params = []
+    for layer_id, (in_width, out_width) in enumerate(zip(layer_widths[:-1], layer_widths[1:])):
+        key, subkey_in, subkey_rec, subkey_bias, subkey_tm, subkey_ts = jax.random.split(key, 6)
+        win = jax.random.normal(subkey_in, shape=(out_width, in_width))
+        win = win * sim_params.w_scale / jnp.sqrt(in_width)
+
+        if layer_id == len(layer_widths)-2:
+            if sim_params.pos_w:
+                win = jnp.abs(win)
+            params.append([win])
+            continue
+        wrec = jax.random.normal(subkey_rec, shape=(out_width, out_width))
+        wrec = wrec * sim_params.w_scale / jnp.sqrt(out_width)
+        if sim_params.bias_enable:
+            wb = jax.random.normal(subkey_bias, shape=(out_width,))
+            wb = wb * sim_params.w_scale / jnp.sqrt(out_width)
+        _, alpha = tau_generation(subkey_tm, sim_params.tau_syn, out_width, sim_params.timestep)
+        _, beta  = tau_generation(subkey_ts, sim_params.tau_mem, out_width, sim_params.timestep)
+        if sim_params.pos_w:
+            win = jnp.abs(win)
+            if sim_params.bias_enable:
+                wb = jnp.abs(wb)
+        if sim_params.bias_enable:
+            params.append([win, wrec, wb, alpha, beta])
+        else:
+            params.append([win, wrec, alpha, beta])
+    return key, params
