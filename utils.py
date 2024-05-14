@@ -23,20 +23,6 @@ def gr_jvp(primals, tangents):
 def lif_recurrent(state, input_spikes):
     return 0
 
-def prediction_r1(w, hp, in_spikes):
-    i_h = jnp.zeros((w[0].shape[0],))
-    v_h = jnp.zeros((w[0].shape[0],))
-    z_h = jnp.zeros((w[0].shape[0],))
-    i = jnp.zeros((w[2].shape[0],))
-    v = jnp.zeros((w[2].shape[0],))
-    z = jnp.zeros((w[2].shape[0],))
-    state = ((w, (i_h, v_h, z_h), (i, v, z)), hp)
-    _, (z_h, v, z) = jax.lax.scan(lif_recurrent, state, in_spikes)
-    return z_h, v, z
-
-
-prediction_jv_r1 = jax.jit(jax.vmap(prediction_r1, in_axes=(None, None, 0)), static_argnums=(1,))
-
 def prediction_rn(params, hp, in_spikes):
     net_dyn = []
     for layer_id, layer in enumerate(params):
@@ -48,17 +34,16 @@ def prediction_rn(params, hp, in_spikes):
     state = ((params, net_dyn), hp)
     _, net_dyn_hist = jax.lax.scan(lif_recurrent, state, in_spikes)
 
-    return net_dyn_hist[-1][1], net_dyn_hist[-1][2], net_dyn_hist
+    return net_dyn_hist[-1][1], net_dyn_hist[-1][2], net_dyn_hist # TODO: return the full history of the network dynamics is expensive
+    # return  v: (bs, 150, 20), z: (bs, 150, 20), [(i, v, z) for all layers]
 
 
 prediction_jv_rn = jax.jit(jax.vmap(prediction_rn, in_axes=(None, None, 0)), static_argnums=(1,))
 
 
+def loss_fn(params, hp, in_spikes, gt_labels):
 
-def loss_fn(w, hp, in_spikes, gt_labels):
-    # _, v, _ = prediction_jv_r1(w, hp, in_spikes)
-
-    v, _, _ = prediction_jv_rn(w, hp, in_spikes)
+    v, _, _ = prediction_jv_rn(params, hp, in_spikes)
     out = jnp.max(v, axis=1)
     logit = jax.nn.softmax(out)
     loss = -jnp.mean(jnp.log(logit[jnp.arange(gt_labels.shape[0]), gt_labels]))
@@ -68,15 +53,14 @@ def loss_fn(w, hp, in_spikes, gt_labels):
     return loss, acc
 
 
-def run_batch(w, hp, loader):
+def run_batch(params, hp, loader):
     batch0 = next(iter(loader))
     in_spikes, gt_labels = batch0
-    (loss, acc), grads = jax.value_and_grad(loss_fn, has_aux=True)(w, hp, in_spikes, gt_labels)
+    (loss, acc), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, hp, in_spikes, gt_labels)
     return (loss, acc), grads
-def run_inference(w, hp, loader):
-    batch0 = next(iter(loader))
+def run_inference(params, hp, batch0):
     in_spikes, gt_labels = batch0
-    _, _, net_dyn_hist = prediction_jv_rn(w, hp, in_spikes)
+    _, _, net_dyn_hist = prediction_jv_rn(params, hp, in_spikes)
     return net_dyn_hist
 
 
@@ -183,12 +167,12 @@ def train(w, hp, loaders, args):
         if args.train_tau:
             params = get_params(opt_state)
             offset = len(params[0]) # number of parameters per layer (4 if no bias, 5 if bias)
-            print(f'offset: {offset}')
+            # print(f'offset: {offset}')
             for layer_id, layer in enumerate(params):
                 if layer_id == len(params) - 1:
                     break
-                print(f'f{((layer_id+1)*offset-2)=}: {jnp.min(layer[-2])=}')
-                print(f'f{((layer_id+1)*offset-1)=}: {jnp.min(layer[-1])=}')
+                # print(f'f{((layer_id+1)*offset-2)=}: {jnp.min(layer[-2])=}')
+                # print(f'f{((layer_id+1)*offset-1)=}: {jnp.min(layer[-1])=}')
 
                 if opt_state[0][(layer_id+1)*offset-2][0].min() < 0.272531793 or opt_state[0][(layer_id+1)-2][0].max() > 0.995:
                     print(f'{e}, -2, {len(opt_state[0][(layer_id+1)-2])}: {opt_state[0][(layer_id+1)-2][0]}')

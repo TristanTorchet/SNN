@@ -1,9 +1,7 @@
 class SimArgs:
-    def __init__(self, n_in: int, n_h: int, bias_enable: bool, train_tau: bool, seed: int, tau_mem: float, tau_syn: float, nb_epochs: int, lr: float):
+    def __init__(self, layer_widths: list, bias_enable: bool, train_tau: bool, seed: int, tau_mem: float, tau_syn: float, nb_epochs: int, lr: float):
         # archi
-        self.n_in = n_in
-        self.n_h = n_h
-        self.n_out = 20
+        self.layer_widths = layer_widths
         self.bias_enable = bias_enable
         # weight
         self.w_scale = 0.3

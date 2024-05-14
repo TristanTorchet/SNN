@@ -273,7 +273,7 @@ def get_data_loaders(sim_params):
     cache_dir = os.getcwd()
     print(f'datasets:')
     train_ds, test_ds = get_numpy_datasets(
-        'shd', sim_params.n_in, cache_dir=cache_dir, download=True,
+        'shd', sim_params.layer_widths[0], cache_dir=cache_dir, download=True,
         timestep=sim_params.timestep, truncation=sim_params.truncation)
 
     # Set random seeds for reproducibility
