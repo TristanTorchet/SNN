@@ -27,15 +27,17 @@ def normal_visualisation(data):
     ax.set_ylabel('Normalized density')
     ax.legend()
 
-def weight_generation(key: jnp.array, n_in: int, n_out: int, pos_w: bool,
+def weight_generation(key: jnp.array,
                       sim_params: SimArgs,
                       visualize_plot: bool = True) -> (jnp.array, jnp.array):
+    n_in = sim_params.layer_widths[0]
+    n_out = sim_params.layer_widths[1]
     key, subkey = jax.random.split(key)
     normal_dist = jax.random.normal(subkey, shape=(n_out, n_in))
     w = normal_dist * sim_params.w_scale / jnp.sqrt(n_in)
     if visualize_plot:
         normal_visualisation(w.flatten())
-    if pos_w:
+    if sim_params.pos_w:
         w = jnp.abs(w)
     return key, w
 
