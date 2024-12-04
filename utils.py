@@ -174,7 +174,7 @@ def train(w, hp, loaders, args):
                 # print(f'f{((layer_id+1)*offset-2)=}: {jnp.min(layer[-2])=}')
                 # print(f'f{((layer_id+1)*offset-1)=}: {jnp.min(layer[-1])=}')
 
-                if opt_state[0][(layer_id+1)*offset-2][0].min() < 0.272531793 or opt_state[0][(layer_id+1)-2][0].max() > 0.995:
+                if opt_state[0][(layer_id+1)*offset-2][0].min() < 0.272531793 or opt_state[0][(layer_id+1)*offset-2][0].max() > 0.995:
                     print(f'{e}, -2, {len(opt_state[0][(layer_id+1)-2])}: {opt_state[0][(layer_id+1)-2][0]}')
                     break
                 elif opt_state[0][(layer_id+1)*offset-1][0].min() < 0.272531793 or opt_state[0][(layer_id+1)*offset-1][0].max() > 0.995:
