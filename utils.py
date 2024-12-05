@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax.example_libraries import optimizers
 import numpy as np
+import wandb
 
 
 @jax.custom_jvp
