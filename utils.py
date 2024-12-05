@@ -232,11 +232,24 @@ def train(w, hp, loaders, args):
             test_loss, test_acc, _ = inference(get_params(opt_state), hp, test_loader)
             print(
                 f'{e:<6}|{epoch_loss.mean():<10.4f}|{epoch_acc.mean():<10.4f}|{val_acc.mean():<10.4f}|{test_acc.mean():<10.4f}|{val_loss.mean():<10.4f}|{test_loss.mean():<10.4f}|{llrr_epoch.mean():<10.4f}|{ugrr_epoch.mean():<10.4f}')
+                        # log into wandb
+            wandb.log({"epoch": e, 
+                       "train_loss": epoch_loss.mean(), "train_acc": epoch_acc.mean(), 
+                       "val_acc": val_acc.mean(), "test_acc": test_acc.mean(), 
+                       "val_loss": val_loss.mean(), "test_loss": test_loss.mean(), 
+                       "llrr": llrr_epoch.mean(), "ugrr": ugrr_epoch.mean()})
+
         else:
             patience -= 1
             if e % 1 == 0:
                 print(
                     f'{e:<6}|{epoch_loss.mean():<10.4f}|{epoch_acc.mean():<10.4f}|{val_acc.mean():<10.4f}|{"-":<10}|{val_loss.mean():<10.4f}|{"-":<10}|{llrr_epoch.mean():<10.4f}|{ugrr_epoch.mean():<10.4f}')
+            wandb.log({"epoch": e, 
+                       "train_loss": epoch_loss.mean(), "train_acc": epoch_acc.mean(), 
+                       "val_acc": val_acc.mean(), 
+                       "val_loss": val_loss.mean(), 
+                       "llrr": llrr_epoch.mean(), "ugrr": ugrr_epoch.mean()})
+
             if patience == 0:
                 break
         hist_train_loss[e] = epoch_loss.mean()
@@ -245,5 +258,11 @@ def train(w, hp, loaders, args):
 
     test_loss, test_acc, _ = inference(get_params(best_opt_state), hp, test_loader)
     print(f'{e:<6}|{"":<10}|{"":<10}|{"":<10}|{test_acc.mean():<10.4f}|{"":<10}|{test_loss.mean():<10.4f}')
+    wandb.log({"epoch": e, 
+            "train_loss": epoch_loss.mean(), "train_acc": epoch_acc.mean(), 
+            "val_acc": val_acc.mean(), "test_acc": test_acc.mean(), 
+            "val_loss": val_loss.mean(), "test_loss": test_loss.mean(), 
+            "llrr": llrr_epoch.mean(), "ugrr": ugrr_epoch.mean()})
+
 
     return get_params, best_opt_state, (hist_train_loss, hist_val_loss, hist_test_loss)
