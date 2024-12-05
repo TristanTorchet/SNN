@@ -21,3 +21,9 @@ class SimArgs:
         self.nb_epochs = nb_epochs
         self.batch_size = 64
         self.seed = seed
+        self.llrr_factor = 1
+        self.ugrr_factor = 0.06
+        self.llrr_thr = 0.05
+        self.ugrr_thr = 10
+
+

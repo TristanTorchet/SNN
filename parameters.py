@@ -108,6 +108,7 @@ def kaiming_uniform_init(key, dim_in, dim_out):
 
 def init_MLSNN(key, sim_params):
     params = []
+    tau_boundaries = []
     for layer_id, (in_width, out_width) in enumerate(zip(sim_params.layer_widths[:-1], sim_params.layer_widths[1:])):
         key, subkey_in, subkey_rec, subkey_bias, subkey_tm, subkey_ts = jax.random.split(key, 6)
 
@@ -130,8 +131,12 @@ def init_MLSNN(key, sim_params):
 
         _, alpha = tau_generation(subkey_tm, sim_params.tau_syn, out_width, sim_params.timestep)
         _, beta  = tau_generation(subkey_ts, sim_params.tau_mem, out_width, sim_params.timestep)
-        alpha = jnp.clip(alpha, a_min=0.272531793, a_max=0.995)
-        beta = jnp.clip(beta, a_min=0.272531793, a_max=0.995)
+        tau_boundaries.append(((tuple((alpha*0.95).tolist()), tuple((alpha*1.05).tolist())),
+                               (tuple((beta*0.95).tolist()), tuple((beta*1.05).tolist()))))
+        #tau_boundaries.append(((0.272531793, 0.995), (0.272531793, 0.995)))
+        # alpha = jnp.clip(alpha, a_min=0.272531793, a_max=0.995)
+        # beta = jnp.clip(beta, a_min=0.272531793, a_max=0.995)
+
         if sim_params.pos_w:
             win = jnp.abs(win)
             if sim_params.bias_enable:
@@ -140,4 +145,4 @@ def init_MLSNN(key, sim_params):
             params.append([win, wrec, wb, alpha, beta])
         else:
             params.append([win, wrec, alpha, beta])
-    return key, params
+    return key, params, tuple(tau_boundaries)

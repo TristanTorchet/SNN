@@ -40,24 +40,54 @@ def prediction_rn(params, hp, in_spikes):
 
 prediction_jv_rn = jax.jit(jax.vmap(prediction_rn, in_axes=(None, None, 0)), static_argnums=(1,))
 
+def lower_local_rate_regularizer(z_all_layers, thr):
+    N_tot = 0 # total number of neurons in the network
+    T = z_all_layers[0].shape[1] # number of timesteps
+    batch_size = z_all_layers[0].shape[0]
+    for l, z in enumerate(z_all_layers[:-1]):
+        N_tot += z.shape[2]
+        firing_rates = jnp.sum(z, axis=1) / T # (bs, n_hl)
+        firing_rates = jnp.clip(firing_rates - thr, 0) ** 2 # clamping the firing rates to 0 and taking the square of the difference with 0.01
+        reg = jnp.sum(firing_rates)
+    #jax.debug.print('down{reg}', reg=(1 / (batch_size * N_tot)) * reg)
+    return (1 / (batch_size * N_tot)) * reg
+
+def upper_global_rate_regularizer(z_all_layers, thr):
+    batch_size = z_all_layers[0].shape[0]
+    for l, z in enumerate(z_all_layers[:-1]):
+        N_l = z.shape[2]
+        firing_rates = jnp.sum(z, axis=(1,2)) / N_l # (bs,)
+        # jax.debug.print('up={firing_rates}', firing_rates=firing_rates)
+        firing_rates = jnp.clip(firing_rates - thr, 0) ** 2 # clamping the firing rates to 0 and taking the square of the difference with 0.06
+        reg = jnp.sum(firing_rates)
+    # jax.debug.print('up={reg}', reg=(1 / batch_size) * reg)
+    return (1 / batch_size) * reg
+
+
 
 def loss_fn(params, hp, in_spikes, gt_labels):
 
-    v, _, _ = prediction_jv_rn(params, hp, in_spikes)
+    v, _, net_dyn_hidden = prediction_jv_rn(params, hp, in_spikes)
     out = jnp.max(v, axis=1)
     logit = jax.nn.softmax(out)
     loss = -jnp.mean(jnp.log(logit[jnp.arange(gt_labels.shape[0]), gt_labels]))
+    
+    z_all_layers = [ndh[2] for ndh in net_dyn_hidden] # [(bs, 150, n_h1), (bs, 150, n_h2), ...] for all layers, n_hj is the number of neurons in layer j
+    (llrr_factor, ugrr_factor, llrr_thr, ugrr_thr) = hp[5]
+    llrr = lower_local_rate_regularizer(z_all_layers, llrr_thr)
+    ugrr = upper_global_rate_regularizer(z_all_layers, ugrr_thr)
+    loss += llrr_factor * llrr + ugrr_factor * ugrr
 
     pred = jnp.argmax(out, axis=1)
     acc = jnp.count_nonzero(pred == gt_labels) / gt_labels.shape[0]
-    return loss, acc
+    return loss, (acc, llrr, ugrr)
 
 
 def run_batch(params, hp, loader):
     batch0 = next(iter(loader))
     in_spikes, gt_labels = batch0
-    (loss, acc), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, hp, in_spikes, gt_labels)
-    return (loss, acc), grads
+    (loss, (acc, llrr, ugrr)), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, hp, in_spikes, gt_labels)
+    return (loss, acc, llrr, ugrr), grads
 def run_inference(params, hp, batch0):
     in_spikes, gt_labels = batch0
     _, _, net_dyn_hist = prediction_jv_rn(params, hp, in_spikes)
@@ -103,7 +133,7 @@ def clip_tau(opt):
 def update(opt, hp, in_spikes, gt_labels, e, train_tau):
     get_params, opt_state, opt_update = opt
     params = get_params(opt_state)
-    (loss, acc), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, hp, in_spikes, gt_labels)
+    (loss, (acc, llrr, ugrr)), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, hp, in_spikes, gt_labels)
     # check if the gradients are NaN
     # for layer_id, layer in enumerate(grads):
     #     for id_g, grad in enumerate(layer):
@@ -114,29 +144,43 @@ def update(opt, hp, in_spikes, gt_labels, e, train_tau):
     opt = (get_params, opt_state, opt_update)
     if train_tau:
         opt = clip_tau(opt)
-    return (loss, acc), opt
+    return (loss, (acc, llrr, ugrr)), opt
 
 def run_epoch(opt, hp, loader, e, train_tau):
     epoch_loss = jnp.zeros((len(loader)))
     epoch_acc = jnp.zeros((len(loader)))
+    llrr_epoch = jnp.zeros((len(loader)))
+    ugrr_epoch = jnp.zeros((len(loader)))
+
     for id_batch, (in_spikes, gt_labels) in enumerate(loader):
-        (loss, acc), opt = update(opt, hp, in_spikes, gt_labels, e, train_tau)
+        (loss, (acc, llrr, ugrr)), opt = update(opt, hp, in_spikes, gt_labels, e, train_tau)
         epoch_loss = epoch_loss.at[id_batch].set(loss)
         epoch_acc = epoch_acc.at[id_batch].set(acc)
-    return (epoch_loss, epoch_acc), opt
+        llrr_epoch = llrr_epoch.at[id_batch].set(llrr)
+        ugrr_epoch = ugrr_epoch.at[id_batch].set(ugrr)
+
+    return (epoch_loss, epoch_acc, llrr_epoch, ugrr_epoch), opt
 
 
 def inference(params, hp, loader):
     inference_loss = np.zeros((len(loader)))
     inference_acc = np.zeros((len(loader)))
+    inference_llrr = np.zeros((len(loader)))
+    inference_ugrr = np.zeros((len(loader)))
     full_label = []
     full_pred = []
     for id_batch, (in_spikes, gt_labels) in enumerate(loader):
-        v, _, _ = prediction_jv_rn(params, hp, in_spikes)
+        v, _, net_dyn_hidden = prediction_jv_rn(params, hp, in_spikes)
         out = jnp.max(v, axis=1)
         logit = jax.nn.softmax(out)
-        inference_loss[id_batch] = -jnp.mean(jnp.log(logit[jnp.arange(gt_labels.shape[0]), gt_labels]))
-
+        batch_loss = -jnp.mean(jnp.log(logit[jnp.arange(gt_labels.shape[0]), gt_labels]))
+        z_all_layers = [ndh[2] for ndh in net_dyn_hidden]  # [(bs, 150, n_h1), (bs, 150, n_h2), ...] for all layers, n_hj is the number of neurons in layer j
+        (llrr_factor, ugrr_factor, llrr_thr, ugrr_thr) = hp[5]
+        llrr = lower_local_rate_regularizer(z_all_layers, llrr_thr)
+        ugrr = upper_global_rate_regularizer(z_all_layers, ugrr_thr)
+        inference_llrr[id_batch] = llrr
+        inference_ugrr[id_batch] = ugrr
+        inference_loss[id_batch] = batch_loss + llrr_factor * llrr + ugrr_factor * ugrr
         pred = jnp.argmax(out, axis=1)
         inference_acc[id_batch] = jnp.count_nonzero(pred == gt_labels) / gt_labels.shape[0]
         full_label.append(gt_labels)
@@ -144,15 +188,15 @@ def inference(params, hp, loader):
     full_label = np.concatenate(full_label, axis=0)
     full_pred = np.concatenate(full_pred, axis=0)
 
-    return inference_loss, inference_acc, (full_label, full_pred)
+    return inference_loss, inference_acc, (full_label, full_pred, inference_llrr, inference_ugrr)
 
 
 def train(w, hp, loaders, args):
     train_loader, val_loader, test_loader = loaders
     opt_init, opt_update, get_params = optimizers.adam(step_size=args.lr)
     opt_state = opt_init(w)
-    print(f'{"Epoch":<6}|{"Loss":<10}|{"Acc":<10}|{"Val Acc":<10}|{"Test Acc":<10}|{"Val Loss":<10}|{"Test Loss":<10}')
-    print(f'{"-" * 6}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}')
+    print(f'{"Epoch":<6}|{"Loss":<10}|{"Acc":<10}|{"Val Acc":<10}|{"Test Acc":<10}|{"Val Loss":<10}|{"Test Loss":<10}|{"LLRR":<10}|{"UGRR":<10}')
+    print(f'{"-" * 6}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}|{"-" * 10}')
     best_val_acc = 0.01  # Random guess
     patience = 20
     best_opt_state = None
@@ -162,7 +206,7 @@ def train(w, hp, loaders, args):
     test_loss = 0
     opt = (get_params, opt_state, opt_update)
     for e in range(args.nb_epochs):
-        (epoch_loss, epoch_acc), opt = run_epoch(opt, hp, train_loader, e, args.train_tau)
+        (epoch_loss, epoch_acc, llrr_epoch, ugrr_epoch), opt = run_epoch(opt, hp, train_loader, e, args.train_tau)
         _, opt_state, _ = opt
         if args.train_tau:
             params = get_params(opt_state)
@@ -187,12 +231,12 @@ def train(w, hp, loaders, args):
             patience = 20
             test_loss, test_acc, _ = inference(get_params(opt_state), hp, test_loader)
             print(
-                f'{e:<6}|{epoch_loss.mean():<10.4f}|{epoch_acc.mean():<10.4f}|{val_acc.mean():<10.4f}|{test_acc.mean():<10.4f}|{val_loss.mean():<10.4f}|{test_loss.mean():<10.4f}')
+                f'{e:<6}|{epoch_loss.mean():<10.4f}|{epoch_acc.mean():<10.4f}|{val_acc.mean():<10.4f}|{test_acc.mean():<10.4f}|{val_loss.mean():<10.4f}|{test_loss.mean():<10.4f}|{llrr_epoch.mean():<10.4f}|{ugrr_epoch.mean():<10.4f}')
         else:
             patience -= 1
             if e % 1 == 0:
                 print(
-                    f'{e:<6}|{epoch_loss.mean():<10.4f}|{epoch_acc.mean():<10.4f}|{val_acc.mean():<10.4f}|{"-":<10}|{val_loss.mean():<10.4f}|{"-":<10}')
+                    f'{e:<6}|{epoch_loss.mean():<10.4f}|{epoch_acc.mean():<10.4f}|{val_acc.mean():<10.4f}|{"-":<10}|{val_loss.mean():<10.4f}|{"-":<10}|{llrr_epoch.mean():<10.4f}|{ugrr_epoch.mean():<10.4f}')
             if patience == 0:
                 break
         hist_train_loss[e] = epoch_loss.mean()
