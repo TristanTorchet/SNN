@@ -4,8 +4,9 @@ class SimArgs:
         self.layer_widths = layer_widths
         self.bias_enable = bias_enable
         # weight
-        self.w_scale = 0.3
-        self.pos_w = True # use only positive weights at initizialization
+        self.init_type = 'xavier_uniform' # 'xavier_uniform' or 'kaiming_uniform'
+        self.w_scale = 0.3 # for weight_init_r1 (which is not used anymore, but legacy such that the previous code can still be run)
+        self.pos_w = False # use only positive FF weights at initizialization
         # neuron model
         self.tau_mem = tau_mem
         self.v_thr = 1

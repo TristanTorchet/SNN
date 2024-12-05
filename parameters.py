@@ -77,24 +77,57 @@ def tau_generation(key, tau_bar, layer_size, dt):
     alpha = jnp.exp(-dt/tau)
     return key, alpha
 
+def xavier_uniform_init(key, dim_in, dim_out):
+    print('Xavier init')
+    key, subkey = jax.random.split(key)
+    dim_sum = dim_in + dim_out if dim_out is not None else dim_in
+    bound = jnp.sqrt(6) / jnp.sqrt(dim_sum)
+    shape = (dim_out, dim_in) if dim_out is not None else (dim_in,)
+    w = jax.random.uniform(subkey, shape=shape, minval=-bound, maxval=bound)
+    return key, w
+
+def kaiming_uniform_init(key, dim_in, dim_out):
+    '''
+    Use kaiming initialization for the weights with a gain of a=sqrt(5)
+    For more details, see:
+        - torch.nn.Linear source code: https://pytorch.org/docs/stable/_modules/torch/nn/modules/linear.html#Linear
+        - torch issue explaining it: https://github.com/pytorch/pytorch/issues/57109
+    :param key: jax.random.PRNGKey
+    :param dim_in: int
+    :param dim_out: int
+    :return: jax.random.PRNGKey, jnp.array
+    '''
+    print('MinGRU init')
+    key, subkey = jax.random.split(key)
+    k = 1/jnp.sqrt(dim_in)
+    bound = jnp.sqrt(k)
+    shape = (dim_out, dim_in) if dim_out is not None else (dim_in,)
+    w = jax.random.uniform(subkey, shape=shape, minval=-bound, maxval=bound)
+    return key, w
+
 
 def init_MLSNN(key, sim_params):
     params = []
     for layer_id, (in_width, out_width) in enumerate(zip(sim_params.layer_widths[:-1], sim_params.layer_widths[1:])):
         key, subkey_in, subkey_rec, subkey_bias, subkey_tm, subkey_ts = jax.random.split(key, 6)
-        win = jax.random.normal(subkey_in, shape=(out_width, in_width))
-        win = win * sim_params.w_scale / jnp.sqrt(in_width)
+
+        init_fn = {
+            'xavier_uniform': xavier_uniform_init,
+            'kaiming_uniform': kaiming_uniform_init
+        }
+        init_fn = init_fn[sim_params.init_type]
+
+        _, win = init_fn(subkey_in, in_width, out_width)
+        _, wrec = init_fn(subkey_rec, out_width, out_width)
+        if sim_params.bias_enable:
+            _, wb = init_fn(subkey_bias, out_width, None)
 
         if layer_id == len(sim_params.layer_widths)-2:
             if sim_params.pos_w:
                 win = jnp.abs(win)
             params.append([win])
             continue
-        wrec = jax.random.normal(subkey_rec, shape=(out_width, out_width))
-        wrec = wrec * sim_params.w_scale / jnp.sqrt(out_width)
-        if sim_params.bias_enable:
-            wb = jax.random.normal(subkey_bias, shape=(out_width,))
-            wb = wb * sim_params.w_scale / jnp.sqrt(out_width)
+
         _, alpha = tau_generation(subkey_tm, sim_params.tau_syn, out_width, sim_params.timestep)
         _, beta  = tau_generation(subkey_ts, sim_params.tau_mem, out_width, sim_params.timestep)
         alpha = jnp.clip(alpha, a_min=0.272531793, a_max=0.995)
