@@ -10,17 +10,17 @@ Table of contents
 2. [Perez-Nieves 2021](#perez2021) (work in progress)
 
 ## 1. Cramer 2020 <a name="cramer20"></a>
-Features: 
+### Features: 
 - 3 networks: 
     - vanilla feedforward with 1/2/3 hidden layers of 128 neurons
     - vanilla RSNN with 1 hidden layer of 1024 neurons
-- Neuron model
+- Neuron model:
     - LIF
     - DPI synapses
 - Regularization: 
     - Global firing upper bound
     - Local firing lower bound
-- Hyperparameters
+- Hyperparameters:
     - $\tau_{mem} = 20ms$
     - $\tau_{syn} = 10ms$
     - $v_{reset} = 0V$
@@ -36,15 +36,44 @@ Features:
     - $s_u = 0.06$ - Regularization global upper strength
     - Weight initialization: Kaiming uniform: $\mathcal{U} \sim [-\sqrt{6/fan_{in}}, \sqrt{6/fan_{in}}]$
 ## 2. Perez-Nieves 2021 <a name="pn21"></a>
-Features:
+### Features:
 - RSNN with 1 hidden layer of 128 neurons
 - Heterogeneous synaptic time constants and membrane time constants
     - clip(x, exp(-1/3), 0.995) for $\alpha$ and $\beta$, thus clipping the time constants: $3\Delta t < \tau < \frac{-\Delta t}{\log(0.995)}=200\Delta t$
         - this was motivated to clip $\tau$ to 100ms with $\Delta t = 0.5ms$ 
 - Regularization: None
-- Hyperparameter: 
+- Hyperparameters: 
   - Same as Cramer 2020
   - Adam optimizer: $\beta_1 = 0.9$, $\beta_2 = 0.999$
   - Time constant initialization: $\tau_{mem} \sim log(\mathcal{N})$
 
+### Paper results: <font color='red'>Validation on test set</font> 
+|                              | Frozen time constants | Trainable time constants |
+|------------------------------|-----------------------|--------------------------|
+| Homogeneous initialization   | 76.9 +- 0.8           | 81.2 +- 0.8              |
+| Heterogeneous initialization | 79.5 +- 1 %           | 82.1 +- 0.8              |
 
+
+### Reproduced results: <font color='red'>train-val-test sets - val accuracy</font>
+
+| DPI synapses                 | Frozen time constants | Trainable time constants |
+|------------------------------|-----------------------|--------------------------|
+| Homogeneous initialization   |                   |                     |
+| Heterogeneous initialization |                   | 83.25                     |
+
+| Delta synapses               | Frozen time constants | Trainable time constants |
+|------------------------------|-----------------------|--------------------------|
+| Homogeneous initialization   |                   |                     |
+| Heterogeneous initialization |                   | 78.94                    |
+
+### Reproduced results: <font color='green'>train-val-test sets - test accuracy</font>
+
+| DPI synapses                 | Frozen time constants | Trainable time constants |
+|------------------------------|-----------------------|--------------------------|
+| Homogeneous initialization   |                   |                     |
+| Heterogeneous initialization |                   | 70.94                    |
+
+| Delta synapses               | Frozen time constants | Trainable time constants |
+|------------------------------|-----------------------|--------------------------|
+| Homogeneous initialization   |                   |                     |
+| Heterogeneous initialization |                   | 70.40                    |
